@@ -2,6 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>WebSocket Performance</title>
 
     <style>
@@ -28,6 +29,7 @@
         }
 
     </style>
+    <link rel="stylesheet" href="css/bootstrap.min.css">
 
     <!-- Reference the Stomp JMS JavaScript library in the folder named client -->
     <script src="client/WebSocket.js"></script>
@@ -39,12 +41,39 @@
 </head>
 
 <body>
-<h1>JMS Speed Tester</h1>
 
-<form>
-    <!--<label for="rate">Messages per second: </label><input type="number" id="rate" value="250" min="100" max="1500"> <button id="set">set</button><br>-->
-    <button id="start">Start</button>
-</form>
+<div class="container">
+    <h1>JMS Message Size Recorder</h1>
+
+    <div id="chart">
+        <!-- SVG will go here -->
+    </div>
+
+    <form role="form" class="form-horizontal">
+        <div class="form-group">
+            <label for="url" class="control-label">URL</label>
+            <input type="url" id="url" class="form-control">
+        </div>
+        <div class="form-group">
+            <label for="topics" class="control-label">Topics</label>
+            <textarea id="topics" class="form-control" rows=4 placeholder="/topic/name"></textarea>
+            <p class="help-block">One topic per line, wildcards allowed.</p>
+        </div>
+        <div class="form-group">
+            <label for="samples" class="control-label">Samples</label>
+            <input type=number" id="samples" class="form-control" value="250">
+            <label for="timeout" class="control-label">Timeout (s)</label>
+            <input type=number" id="timeout" class="form-control" value="5" disabled>
+            <!-- TODO add timeout -->
+        </div>
+        <div class="form-group">
+            <button type=submit class="btn btn-default" id="start">Start</button>
+        </div>
+        <!--<label for="rate">Messages per second: </label><input type="number" id="rate" value="250" min="100" max="1500"> <button id="set">set</button><br>-->
+    </form>
+
+</div>
+
 
 </body>
 </html>
