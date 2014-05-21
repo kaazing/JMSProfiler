@@ -92,6 +92,7 @@
             var commandProducer = session.createProducer(commandQueue);
             var topic = session.createTopic(topicName);
             var consumer = session.createConsumer(topic);
+
             consumer.setMessageListener(function (msg) {
             });
 
@@ -117,6 +118,16 @@
                     }
 
                     connection.stop(connectionStopped);
+                });
+            }
+
+            function waitOnJMSMessage() {
+                // We need to hold on a JMS message before sampling so we're not counting
+                // the traffic used to set up the subscriptions, etc.
+                return new Q.Promise(function (resolve) {
+                    consumer.setMessageListener(function (msg) {
+                        resolve();
+                    });
                 });
             }
 
@@ -163,6 +174,7 @@
                 .then(function () {
                     sendRateCommand(500)
                 })
+                .then(waitOnJMSMessage)
                 .then(collectSamples)
                 .then(function () {
                     console.log('collected ' + samples.length + ' samples')
