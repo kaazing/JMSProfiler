@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>WebSocket Performance</title>
+
+    <style>
+
+        body {
+            font: 10px sans-serif;
+        }
+
+        .axis path,
+        .axis line {
+            fill: none;
+            stroke: #000;
+            shape-rendering: crispEdges;
+        }
+
+        .x.axis path {
+            display: none;
+        }
+
+        .line {
+            fill: none;
+            stroke: steelblue;
+            stroke-width: 1.5px;
+        }
+
+    </style>
+
+    <!-- Reference the Stomp JMS JavaScript library in the folder named client -->
+    <script src="client/WebSocket.js"></script>
+    <script src="client/jms/JmsClient.js"></script>
+    <script src="http://d3js.org/d3.v3.js"></script>
+    <script src="lib/q.js"></script>
+
+    <script src="app.js"></script>
+</head>
+
+<body>
+<h1>JMS Speed Tester</h1>
+
+<form>
+    <!--<label for="rate">Messages per second: </label><input type="number" id="rate" value="250" min="100" max="1500"> <button id="set">set</button><br>-->
+    <button id="start">Start</button>
+</form>
+
+</body>
+</html>
