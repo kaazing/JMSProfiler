@@ -1,174 +1,197 @@
 (function speedMeter() {
     "use strict";
 
-// Create variables to store the connection and session            
-    var session, connection;
-    var commandProducer;    // Added in Lab E
-    var count = 1;
+    var sampleLimit = 100;
+    var webSocket = null;
+    var topics = ["/topic/stock", "/topic/ticker", "/topic/ticker.>"];
 
-    var sampling = false;
-    var readyToSample = false;
-    var sampleLimit = 250;
-    var samples = new Array();
-    var sampleNum = 0;
 
     var url = "ws://localhost:8000/jms";
     window.onload = function () {
-        var factory = new JmsConnectionFactory(url);
-        // Intercept the creation of the WebSocket to instrument it
-        factory.setWebSocketFactory(wrappedFactory());
-        var future = factory.createConnection(function () {
-            try {
-                connection = future.getValue();
-//                setUp();
-                installForm();
-            } catch (e) {
-                alert(e.message);
-            }
+        var wsf = new WebSocketFactory();
+        // Will save the web socket so we can attach event listeners to it later
+        interceptSocketCreation(wsf, function (ws) {
+            webSocket = ws
         });
+        // You give me promises, promises...
+        requestConnection(url, wsf).then(
+            function (connection) {
+                return collectAll(connection, topics);
+            }
+        ).then(plotData)
+            .catch(function (error) {
+                console.log("Failed!", error.message);
+            });
+
     }
 
-    /*
-     Create a function for creating a session and setting up
-     Topics, Queues, Consumers, Providers, and Listeners.
-     The following function is called when the connection has been created
-     but before starting the flow of data.
+    /**
+     *   Wraps the WebSocket factory with a promise that returns
+     *   the websocket so we can instrument it later.
      */
-    function setUp() {
-        // Typical session options shown.
-        // Add your code here to set up Topics, Queues, Consumers, Providers, and Listeners.
-//    var topic = session.createTopic("/topic/ticker.AAPL");
-//    var consumer = session.createConsumer(topic);
-//    consumer.setMessageListener(onMessage);
 
-
-    }
-
-
-// This function is called from the index.html page when the page loads
-
-// ========================================================
-// Wrap the WebSocket factory so we can intercept the
-// returned WebSocket and instrument it.
-
-    function wrappedFactory() {
-        var factory = new WebSocketFactory();
+    function interceptSocketCreation(wsFactory, intercept) {
         var superCreate = WebSocketFactory.prototype.createWebSocket;
 
-        factory.__proto__.createWebSocket = (function () {
+        wsFactory.__proto__.createWebSocket = (function () {
             return function (location, protocols) {
-                var webSocket = superCreate.call(factory, location, protocols);
-                return instrumentedWebSocket(webSocket);
+                var webSocket = superCreate.call(wsFactory, location, protocols);
+                intercept(webSocket);
+                return webSocket;
+            }
+        })();
+    }
+
+    /**
+     * Sets up the connection at url and returns a promise with the connection.
+     *
+     * @param url
+     */
+    function requestConnection(url, wsFactory) {
+        return new Q.Promise(function (resolve, reject) {
+            var factory = new JmsConnectionFactory(url);
+            factory.setWebSocketFactory(wsFactory);
+            var future = factory.createConnection(function () {
+                try {
+                    var connection = future.getValue();
+                    resolve(connection);
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        });
+    }
+
+    function collectAll(connection, topics) {
+        return new Q.Promise(function (resolve, reject, progress) {
+            var result = [];
+            topics.reduce(function (sequence, topic) {
+                return sequence.then(function () {
+                    return collectData(webSocket, connection, topic)
+                })
+                    .then(function (samples) {
+                        result.push({topic:(topic), samples:(samples)});
+                    });
+            }, Q.Promise.resolve())
+                .then(function () {
+                    resolve(result  )
+                }).catch(function (error) {
+                    console.log('returning error');
+                    reject(error);
+                });
+        });
+    }
+
+    function collectData(webSocket, connection, topicName) {
+
+        return new Q.Promise(function (resolve, reject, progress) {
+
+            console.log("Creating session for " + topicName); // <<<
+            var session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+            var commandQueue = session.createQueue("/queue/tickerCommand");
+            var commandProducer = session.createProducer(commandQueue);
+            var topic = session.createTopic(topicName);
+            var consumer = session.createConsumer(topic);
+            consumer.setMessageListener(function (msg) {
+            });
+
+            var samples = [];
+
+            /**
+             * @returns a promise that resolves when the connection has been started.
+             */
+            function startConnection() {
+                return new Q.Promise(function (resolve) {
+                    function connectionStarted() {
+                        resolve();
+                    }
+
+                    connection.start(connectionStarted);
+                });
             }
 
-        })();
+            function stopConnection() {
+                return new Q.Promise(function (resolve) {
+                    function connectionStopped() {
+                        resolve();
+                    }
 
-        return factory;
-    }
+                    connection.stop(connectionStopped);
+                });
+            }
 
-    function instrumentedWebSocket(webSocket) {
-        webSocket.addEventListener('message', trackMessagePayload, false);
-        return webSocket;
-    }
+            function sendRateCommand(value) {
+                return new Q.Promise(function (resolve) {
+                    var message = session.createTextMessage('');
+                    value = value.toString();
+                    message.setStringProperty('setMessagesPerSecond', value);
+                    commandProducer.send(message, function () {
+                        resolve()
+                    });
+                });
+            }
 
-    function trackMessagePayload(event) {
-        // event.data is a ByteBuffer
-        if (!sampling) return;
-        if (sampleNum < sampleLimit) {
-            sampleNum++;
-            samples.push(event.data.limit);
-        } else {
-            stopSampling();
-        }
-    }
+            function collectSamples() {
+                return new Q.Promise(function (resolve) {
 
+                    function wsMessageListener(event) {
+                        // event.data is a ByteBuffer
+                        if (samples.length < sampleLimit) {
+                            samples.push(event.data.limit);
+                        } else {
+                            resolve();
+                        }
+                    }
 
-    function startSampling() {
+                    webSocket.addEventListener('message', wsMessageListener, false);
+                });
+            }
 
-        function connectionStarted() {
-            sendRateCommand(500);
-        }
+            function closeSession() {
+                return new Q.Promise(function (resolve) {
+                    function sessionClosed() {
+                        console.log("Session closed"); // <<<
+                        session = null;
+                        resolve();
+                    }
 
+                    session.close(sessionClosed);
+                });
+            }
 
-        session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
-        var commandQueue = session.createQueue("/queue/tickerCommand");
-        commandProducer = session.createProducer(commandQueue);
-        subscribeTo("/topic/stock");
-//        subscribeToTopic("/topic/ticker");
-//        buildSubscriptions();
-        sampling = false;
-        readyToSample = true;    // see onMessage below
-        connection.start(connectionStarted);
-    }
+            startConnection()
+                .then(function () {
+                    sendRateCommand(500)
+                })
+                .then(collectSamples)
+                .then(function () {
+                    console.log('collected ' + samples.length + ' samples')
+                })
+                .then(stopConnection)
+                .then(function () {
+                    sendRateCommand(1)
+                })
+                .then(closeSession)
+                .then(function () {
+                    console.log('returning samples');
+                    resolve(samples);
+                })
+                .catch(function (error) {
+                    console.log('returning error');
+                    reject(error);
+                });
 
-
-// This exists basically to enable sampling after the initial setup commands have been sent
-    function onMessage(msg) {
-        if (sampling) return;
-        if (readyToSample) {
-            // we were waiting for a JMS message to signal we're done with the startup negotiations
-            readyToSample = false;
-            sampling = true;
-        }
-    }
-
-
-    function stopSampling() {
-
-        function closeSession() {
-            session.close();
-            session = null;
-        }
-
-        sampling = readyToSample = false;
-        sendRateCommand(1);   // throttle back
-        connection.stop(closeSession);
-        plotSamples(samples);
-    }
-
-
-    function subscribeTo(name) {
-        var topic = session.createTopic(name);
-        var consumer = session.createConsumer(topic);
-        consumer.setMessageListener(onMessage);
-    }
-
-    function subscribeToPerStockTopics() {
-        var symbols = ["ADBE", "AKAM", "AAPL", "BAC" , "CSCO", "C"   , "DELL", "FB"  , "GOOG", "HPQ" , "HSBC", "INFA", "INTC", "IBM" , "JPM" , "KZNG", "MSFT", "ORCL", "TIBX", "WFC"];
-        symbols.forEach(function (symbol) {
-            var topic = session.createTopic("/topic/ticker." + symbol);
-            var consumer = session.createConsumer(topic);
-            consumer.setMessageListener(onMessage);
         });
     }
 
 
-// ========================================================
-// Form code (for changing the rate and resetting values)
 
-    function installForm() {
-        var form = document.forms[0];
-        form.onsubmit = function (e) {
-            e.preventDefault()
-        };
-        form.elements['start'].onclick = function () {
-            startSampling();
-        };
-    }
-
-    function sendRateCommand(value) {
-        // Your code here
-        var message = session.createTextMessage('');
-        value = value.toString();
-        message.setStringProperty('setMessagesPerSecond', value);
-        commandProducer.send(message, null);
-    }
 
 // ========================================================
 // Charting
 
 
-    function plotSamples(samples) {
+    function plotData(data) {
         var margin = {top: 20, right: 80, bottom: 30, left: 50},
             width = 960 - margin.left - margin.right,
             height = 500 - margin.top - margin.bottom;
@@ -182,16 +205,17 @@
 
         var x = d3.scale.linear()
             .range([0, width])
-            .domain([0, samples.length - 1]);
+            .domain([0, d3.max(data, function (a) { return a.samples.length } )]);
 
         var y = d3.scale.linear()
             .range([height, 0])
             .domain([
-                d3.min(samples),
-                d3.max(samples)
+                0,
+                d3.max(data, function (a) { return d3.max(a.samples) })
             ]);
 
-        var color = d3.scale.category10();
+        var color = d3.scale.category10()
+            .domain(data.map(function(d) { return d.topic }));
 
         var xAxis = d3.svg.axis()
             .scale(x)
@@ -225,11 +249,46 @@
             .text("Payload (bytes)");
 
 
-        svg.append("path")
-            .datum(samples)
+        var topic = svg.selectAll('.topic')
+            .data(data)
+            .enter().append('g')
+            .attr('class', 'topic');
+
+        topic.append("path")
             .attr("class", "line")
-            .attr("d", line);
+            .attr("d", function (d) {
+                return line(d.samples)
+            })
+            .style("stroke", function (d) {
+                return color(d.topic)
+            });
+
+        topic.append("text")
+            .datum(function(d) { return {topic: d.topic, sample: (d.samples.length), value: d3.median(d.samples) } })
+            .attr("transform", function(d) { return "translate(" + x(d.sample) + "," + y(d.value) + ")"; })
+            .attr("x", 3)
+            .attr("dy", ".35em")
+            .text(function(d) { return d.topic; })
+            .style("fill", function (d) {
+                return color(d.topic)
+            });
+
+
     }
 
 })();
+
+
+// ========================================================
+// Form code (for changing the rate and resetting values)
+
+    function installForm() {
+        var form = document.forms[0];
+        form.onsubmit = function (e) {
+            e.preventDefault()
+        };
+        form.elements['start'].onclick = function () {
+            sample();
+        };
+    }
 
