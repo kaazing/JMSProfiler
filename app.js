@@ -1,20 +1,24 @@
 (function speedMeter() {
     "use strict";
 
-    var sampleLimit = 100;
+    var sampleLimit = 250;
     var webSocket = null;
     var topics = ["/topic/stock", "/topic/ticker", "/topic/ticker.>"];
 
 
     var url = "ws://localhost:8000/jms";
+
     window.onload = function () {
         var wsf = new WebSocketFactory();
         // Will save the web socket so we can attach event listeners to it later
         interceptSocketCreation(wsf, function (ws) {
             webSocket = ws
         });
-        // You give me promises, promises...
-        requestConnection(url, wsf).then(
+        installForm(wsf);
+    }
+
+    function performSampling(wsFactory) {
+        requestConnection(url, wsFactory).then(
             function (connection) {
                 return collectAll(connection, topics);
             }
@@ -22,7 +26,39 @@
             .catch(function (error) {
                 console.log("Failed!", error.message);
             });
+    }
 
+
+    /**
+     * Call on load to wire up the form
+     */
+    function installForm(wsFactory) {
+        var form = document.forms[0];
+        form.onsubmit = function (e) {
+            e.preventDefault()
+        };
+        form.elements.url.value = makeURL('jms');
+        form.elements.start.onclick = function () {
+            submit(form, wsFactory);
+        };
+    }
+
+    function makeURL(service, protocol) {
+        protocol = protocol || location.authority
+        // detect explicit host:port authority
+        var authority = location.host;
+        if (location.search) {
+            authority = location.search.slice(1) + '.' + authority;
+        } else {
+            var hostPort = authority.split(':');
+            var ports = {
+                http: '80',
+                https: '443'
+            };
+            authority = hostPort[0] + ':'
+                + (parseInt(hostPort[1] || ports[location.protocol]));
+        }
+        return 'ws://' + authority + '/' + service;
     }
 
     /**
@@ -41,6 +77,69 @@
             }
         })();
     }
+
+    function submit(form, wsFactory) {
+
+        var errors = {count: 0, url: [], topics: [], samples: [], timeout: []};
+
+        function addError(field, error) {
+            errors.count++;
+            errors[field].push(error);
+        }
+
+        function require(field, value) {
+            if (!value || !(value.trim())) addError(field, 'required')
+        };
+
+        var url = form.elements.url.value;
+        var topicNames = form.elements.topics.value;
+        var samples = form.elements.samples.value;
+        var timeout = form.elements.timeout.value;
+
+        require('url', url);
+        require('topics', topicNames);
+        require('samples', samples);
+        require('timeout', timeout);
+
+        // extract the topic names
+        var topics = (topicNames || '').trim().split('\n')
+            .filter(function (name) {
+                return name.trim()
+            })
+            .map(function (name) {
+                name = name.trim();
+                return (name.indexOf('/topic/') >= 0) ? name : ('/topic/' + name);
+            });
+        // be nice to the user and show the values we're using
+        form.elements.topics.value = topics.join('\n');
+
+        samples = (samples || '').trim();
+        if (!/^(\+)?[0-9]+$/.test(samples)) addError('samples', 'Must be an integer > 0');
+        samples = parseInt(samples);
+
+        timeout = (timeout || '').trim();
+        if (!/^(\+)?[0-9.]+$/.test(samples)) addError('timeout', 'Must be an number > 0');
+        timeout = parseFloat(timeout);
+
+        // Update the form to reflect the error status
+        ['url', 'topics', 'samples', 'timeout'].forEach(function (field) {
+            var group = document.querySelector('.' + field + '-group'); // e.g. .url-group
+            var messageField = group.querySelector('.message');
+            var message = errors[field].join(', ');
+            if (!message) {
+                group.classList.remove('has-error');
+            } else {
+                group.classList.add('has-error');
+                messageField.innerHTML = message;
+            }
+            messageField.hidden = !message;
+        });
+
+        if (!errors.count) {
+            performSampling(wsFactory);
+        }
+    }
+
 
     /**
      * Sets up the connection at url and returns a promise with the connection.
@@ -70,11 +169,11 @@
                     return collectData(webSocket, connection, topic)
                 })
                     .then(function (samples) {
-                        result.push({topic:(topic), samples:(samples)});
+                        result.push({topic: (topic), samples: (samples)});
                     });
             }, Q.Promise.resolve())
                 .then(function () {
-                    resolve(result  )
+                    resolve(result)
                 }).catch(function (error) {
                     console.log('returning error');
                     reject(error);
@@ -86,7 +185,6 @@
 
         return new Q.Promise(function (resolve, reject, progress) {
 
-            console.log("Creating session for " + topicName); // <<<
             var session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
             var commandQueue = session.createQueue("/queue/tickerCommand");
             var commandProducer = session.createProducer(commandQueue);
@@ -131,17 +229,6 @@
                 });
             }
 
-            function sendRateCommand(value) {
-                return new Q.Promise(function (resolve) {
-                    var message = session.createTextMessage('');
-                    value = value.toString();
-                    message.setStringProperty('setMessagesPerSecond', value);
-                    commandProducer.send(message, function () {
-                        resolve()
-                    });
-                });
-            }
-
             function collectSamples() {
                 return new Q.Promise(function (resolve) {
 
@@ -171,18 +258,12 @@
             }
 
             startConnection()
-                .then(function () {
-                    sendRateCommand(500)
-                })
                 .then(waitOnJMSMessage)
                 .then(collectSamples)
                 .then(function () {
                     console.log('collected ' + samples.length + ' samples')
                 })
                 .then(stopConnection)
-                .then(function () {
-                    sendRateCommand(1)
-                })
                 .then(closeSession)
                 .then(function () {
                     console.log('returning samples');
@@ -197,8 +278,6 @@
     }
 
 
-
-
 // ========================================================
 // Charting
 
@@ -209,7 +288,7 @@
             height = 500 - margin.top - margin.bottom;
 
 
-        var svg = d3.select("body").append("svg")
+        var svg = d3.select("#chart").append("svg")
             .attr("width", width + margin.left + margin.right)
             .attr("height", height + margin.top + margin.bottom)
             .append("g")
@@ -217,17 +296,23 @@
 
         var x = d3.scale.linear()
             .range([0, width])
-            .domain([0, d3.max(data, function (a) { return a.samples.length } )]);
+            .domain([0, d3.max(data, function (a) {
+                return a.samples.length
+            })]);
 
         var y = d3.scale.linear()
             .range([height, 0])
             .domain([
                 0,
-                d3.max(data, function (a) { return d3.max(a.samples) })
+                d3.max(data, function (a) {
+                    return d3.max(a.samples)
+                })
             ]);
 
         var color = d3.scale.category10()
-            .domain(data.map(function(d) { return d.topic }));
+            .domain(data.map(function (d) {
+                return d.topic
+            }));
 
         var xAxis = d3.svg.axis()
             .scale(x)
@@ -276,11 +361,17 @@
             });
 
         topic.append("text")
-            .datum(function(d) { return {topic: d.topic, sample: (d.samples.length), value: d3.median(d.samples) } })
-            .attr("transform", function(d) { return "translate(" + x(d.sample) + "," + y(d.value) + ")"; })
+            .datum(function (d) {
+                return {topic: d.topic, sample: (d.samples.length), value: d3.median(d.samples) }
+            })
+            .attr("transform", function (d) {
+                return "translate(" + x(d.sample) + "," + y(d.value) + ")";
+            })
             .attr("x", 3)
             .attr("dy", ".35em")
-            .text(function(d) { return d.topic; })
+            .text(function (d) {
+                return d.topic;
+            })
             .style("fill", function (d) {
                 return color(d.topic)
             });
@@ -291,16 +382,4 @@
 })();
 
 
-// ========================================================
-// Form code (for changing the rate and resetting values)
-
-    function installForm() {
-        var form = document.forms[0];
-        form.onsubmit = function (e) {
-            e.preventDefault()
-        };
-        form.elements['start'].onclick = function () {
-            sample();
-        };
-    }
 
