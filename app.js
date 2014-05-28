@@ -1,26 +1,19 @@
 (function speedMeter() {
     "use strict";
 
-    var sampleLimit = 250;
-    var webSocket = null;
-    var topics = ["/topic/stock", "/topic/ticker", "/topic/ticker.>"];
-
-
-    var url = "ws://localhost:8000/jms";
-
     window.onload = function () {
         var wsf = new WebSocketFactory();
         // Will save the web socket so we can attach event listeners to it later
         interceptSocketCreation(wsf, function (ws) {
-            webSocket = ws
+            wsf.wrappedWebSocket = ws;
         });
         installForm(wsf);
     }
 
-    function performSampling(wsFactory) {
+    function performSampling(wsFactory, url, topics, sampleLimit, timeLimit) {
         requestConnection(url, wsFactory).then(
             function (connection) {
-                return collectAll(connection, topics);
+                return collectAll(wsFactory, connection, topics, sampleLimit, timeLimit);
             }
         ).then(plotData)
             .catch(function (error) {
@@ -122,7 +115,7 @@
         timeout = parseFloat(timeout);
 
         // Update the form to reflect the error status
-        ['url', 'topics', 'samples', 'timeout'].forEach(function (field) {
+        ['url', 'topics', 'samples'].forEach(function (field) {
             var group = document.querySelector('.' + field + '-group'); // e.g. .url-group
             var messageField = group.querySelector('.message');
             var message = errors[field].join(', ');
@@ -136,7 +129,7 @@
         });
 
         if (!errors.count) {
-            performSampling(wsFactory);
+            performSampling(wsFactory, url, topics, samples, timeout);
         }
     }
 
@@ -161,12 +154,12 @@
         });
     }
 
-    function collectAll(connection, topics) {
+    function collectAll(wsFactory, connection, topics, sampleLimit, timeLimit) {
         return new Q.Promise(function (resolve, reject, progress) {
             var result = [];
             topics.reduce(function (sequence, topic) {
                 return sequence.then(function () {
-                    return collectData(webSocket, connection, topic)
+                    return collectData(wsFactory.wrappedWebSocket, connection, topic, sampleLimit, timeLimit)
                 })
                     .then(function (samples) {
                         result.push({topic: (topic), samples: (samples)});
@@ -181,13 +174,14 @@
         });
     }
 
-    function collectData(webSocket, connection, topicName) {
+    function collectData(webSocket, connection, topicName, sampleLimit, timeLimit) {
 
         return new Q.Promise(function (resolve, reject, progress) {
 
+            console.log('connecting to ' + topicName);
+
             var session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
-            var commandQueue = session.createQueue("/queue/tickerCommand");
-            var commandProducer = session.createProducer(commandQueue);
+            // TODO handle errors when creating topic listeners
             var topic = session.createTopic(topicName);
             var consumer = session.createConsumer(topic);
 
@@ -205,6 +199,7 @@
                         resolve();
                     }
 
+                    console.log('...waiting on connection start');
                     connection.start(connectionStarted);
                 });
             }
@@ -222,6 +217,7 @@
             function waitOnJMSMessage() {
                 // We need to hold on a JMS message before sampling so we're not counting
                 // the traffic used to set up the subscriptions, etc.
+                 console.log('...waiting on JMS message');
                 return new Q.Promise(function (resolve) {
                     consumer.setMessageListener(function (msg) {
                         resolve();
@@ -230,7 +226,7 @@
             }
 
             function collectSamples() {
-                return new Q.Promise(function (resolve) {
+                return new Q.Promise(function (resolve, reject, progress) {
 
                     function wsMessageListener(event) {
                         // event.data is a ByteBuffer
@@ -241,36 +237,32 @@
                         }
                     }
 
-                    webSocket.addEventListener('message', wsMessageListener, false);
+                   console.log('...sampling');
+                   webSocket.addEventListener('message', wsMessageListener, false);
                 });
             }
 
             function closeSession() {
                 return new Q.Promise(function (resolve) {
                     function sessionClosed() {
-                        console.log("Session closed"); // <<<
                         session = null;
                         resolve();
                     }
 
+                    console.log('...closing session');
                     session.close(sessionClosed);
                 });
             }
 
             startConnection()
-                .then(waitOnJMSMessage)
+                .then(waitOnJMSMessage).timeout(timeLimit * 1000)     // this timeout triggers an error if the topic isn't available
                 .then(collectSamples)
-                .then(function () {
-                    console.log('collected ' + samples.length + ' samples')
-                })
                 .then(stopConnection)
                 .then(closeSession)
                 .then(function () {
-                    console.log('returning samples');
                     resolve(samples);
                 })
                 .catch(function (error) {
-                    console.log('returning error');
                     reject(error);
                 });
 
