@@ -269,7 +269,7 @@
             }
 
             startConnection()
-                .then(waitOnJMSMessage).timeout(timeLimit * 1000)     // this timeout triggers an error if the topic isn't available
+                .then(waitOnJMSMessage)
                 .then(collectSamples)
                 .then(stopConnection)
                 .then(closeSession)

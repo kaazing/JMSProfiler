@@ -42,10 +42,16 @@
             display: none
         }
 
+        .timeout-group {
+            display: none     /* Hide for now */
+        }
+
     </style>
 
     <link rel="stylesheet" href="css/bootstrap.min.css">
     <script src="lib/modernizr.custom.11310.js"></script>
+    <script src="client/WebSocket.js"></script>
+    <script src="client/jms/JmsClient.js"></script>
 </head>
 
 <body>
@@ -102,7 +108,7 @@
                 startupBlock.style.display = 'block';
             } else {
                 Modernizr.load([
-                    {load: ['client/WebSocket.js', 'client/jms/JmsClient.js', 'lib/d3.v3.min.js', 'lib/q.js']},
+                    {load: ['lib/d3.v3.min.js', 'lib/q.js']},
                     {load: 'app.js'}]);
             }
 
