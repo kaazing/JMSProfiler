@@ -25,6 +25,18 @@
      */
     function installForm(wsFactory) {
         var form = document.forms[0];
+        if (window.localStorage) {
+            var settings = window.localStorage.JMSProfiler;
+            if (settings) {
+                settings = JSON.parse(settings);
+                ['topics', 'timeout', 'samples'].forEach(
+                    function(key) {
+                       form.elements[key].value = settings[key];
+                    }
+                )
+            }
+
+        }
         form.onsubmit = function (e) {
             e.preventDefault()
         };
@@ -127,7 +139,11 @@
         });
 
         if (!errors.count) {
+            if (window.localStorage) {
+                window.localStorage.JMSProfiler = JSON.stringify({topics: (form.elements.topics.value), timeout: (timeout), samples: (samples)});
+            }
             performSampling(wsFactory, url, topics, samples, timeout);
+
         }
     }
 

@@ -94,7 +94,7 @@
     <script>
         // Check for required functionality
         (function () {
-            var hasRequired =  !!(Modernizr.svg && Array.prototype.forEach && document.querySelector);
+            var hasRequired =  !!(Modernizr.svg && JSON && Array.prototype.forEach && document.querySelector);
             var startupBlock = document.getElementById('startup');
             if (!hasRequired) {
                 startupBlock.classList.add('bg-danger');
