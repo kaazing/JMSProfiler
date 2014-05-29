@@ -30,25 +30,32 @@
 
     </style>
     <style>
-        .message {
+        form, .message {
             visibility: hidden
         }
+
+        .svg form {
+            visibility: visible
+        }
+
+        #startup {
+            display: none
+        }
+
     </style>
 
     <link rel="stylesheet" href="css/bootstrap.min.css">
-
-    <script src="client/WebSocket.js"></script>
-    <script src="client/jms/JmsClient.js"></script>
-    <script src="lib/d3.v3.min.js"></script>
-    <script src="lib/q.js"></script>
-
-    <script src="app.js"></script>
+    <script src="lib/modernizr.custom.11310.js"></script>
 </head>
 
 <body>
 
 <div class="container">
     <h1>JMS Message Profiler</h1>
+
+    <div id="startup">
+        Checking for required features: SVG, modern DOM, array iterators.
+    </div>
 
     <div id="chart">
         <!-- SVG will go here -->
@@ -84,6 +91,23 @@
         </div>
     </form>
 
+    <script>
+        // Check for required functionality
+        (function () {
+            var hasRequired =  !!(Modernizr.svg && Array.prototype.forEach && document.querySelector);
+            var startupBlock = document.getElementById('startup');
+            if (!hasRequired) {
+                startupBlock.classList.add('bg-danger');
+                startupBlock.innerHTML = 'Your browser is not modern enough to run this application (requires <a href="http://caniuse.com/#feat=svg">SVG</a>, <a href="http://kangax.github.io/compat-table/es5/">ES5</a> and <a href="http://caniuse.com/#feat=queryselector">querySelector</a>)';
+                startupBlock.style.display = 'block';
+            } else {
+                Modernizr.load([
+                    {load: ['client/WebSocket.js', 'client/jms/JmsClient.js', 'lib/d3.v3.min.js', 'lib/q.js']},
+                    {load: 'app.js'}]);
+            }
+
+        })();
+    </script>
 </div>
 
 

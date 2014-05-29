@@ -1,14 +1,12 @@
-(function speedMeter() {
+(function profiler() {
     "use strict";
 
-    window.onload = function () {
-        var wsf = new WebSocketFactory();
-        // Will save the web socket so we can attach event listeners to it later
-        interceptSocketCreation(wsf, function (ws) {
-            wsf.wrappedWebSocket = ws;
-        });
-        installForm(wsf);
-    }
+    var wsf = new WebSocketFactory();
+    // Will save the web socket so we can attach event listeners to it later
+    interceptSocketCreation(wsf, function (ws) {
+        wsf.wrappedWebSocket = ws;
+    });
+    installForm(wsf);
 
     function performSampling(wsFactory, url, topics, sampleLimit, timeLimit) {
         requestConnection(url, wsFactory).then(
@@ -188,7 +186,7 @@
             consumer.setMessageListener(function (msg) {
             });
 
-            var samples = [];
+            var wsSamples = [], jmsTimes = [];
 
             /**
              * @returns a promise that resolves when the connection has been started.
@@ -217,7 +215,7 @@
             function waitOnJMSMessage() {
                 // We need to hold on a JMS message before sampling so we're not counting
                 // the traffic used to set up the subscriptions, etc.
-                 console.log('...waiting on JMS message');
+                console.log('...waiting on JMS message');
                 return new Q.Promise(function (resolve) {
                     consumer.setMessageListener(function (msg) {
                         resolve();
@@ -230,15 +228,15 @@
 
                     function wsMessageListener(event) {
                         // event.data is a ByteBuffer
-                        if (samples.length < sampleLimit) {
-                            samples.push(event.data.limit);
+                        if (wsSamples.length < sampleLimit) {
+                            wsSamples.push(event.data.limit);
                         } else {
                             resolve();
                         }
                     }
 
-                   console.log('...sampling');
-                   webSocket.addEventListener('message', wsMessageListener, false);
+                    console.log('...sampling');
+                    webSocket.addEventListener('message', wsMessageListener, false);
                 });
             }
 
@@ -260,7 +258,7 @@
                 .then(stopConnection)
                 .then(closeSession)
                 .then(function () {
-                    resolve(samples);
+                    resolve(wsSamples);
                 })
                 .catch(function (error) {
                     reject(error);
