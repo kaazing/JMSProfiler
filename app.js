@@ -105,7 +105,7 @@
         require('timeout', timeout);
 
         // extract the topic names
-        var topics = (topicNames || '').trim().split('\n')
+        var topics = (topicNames || '').split(/\s+/)
             .filter(function (name) {
                 return name.trim()
             })
