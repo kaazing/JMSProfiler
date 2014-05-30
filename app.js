@@ -228,17 +228,6 @@
                 });
             }
 
-            function waitOnJMSMessage() {
-                // We need to hold on a JMS message before sampling so we're not counting
-                // the traffic used to set up the subscriptions, etc.
-                console.log('...waiting on JMS message');
-                return new Q.Promise(function (resolve) {
-                    consumer.setMessageListener(function (msg) {
-                        resolve();
-                    });
-                });
-            }
-
             function collectSamples() {
                 return new Q.Promise(function (resolve, reject, progress) {
 
@@ -269,7 +258,6 @@
             }
 
             startConnection()
-                .then(waitOnJMSMessage)
                 .then(collectSamples)
                 .then(stopConnection)
                 .then(closeSession)
@@ -334,7 +322,8 @@
             })
             .y(function (d) {
                 return y(d);
-            });
+            })
+            .defined(function (d, i) { return i } ); // No line defined at point 0
 
         svg.append("g")
             .attr("class", "x axis")
