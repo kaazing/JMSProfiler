@@ -1,7 +1,7 @@
 # Mac OS-specific file
 .DS_Store
 # vim backups
-# *~
+*~
 # Kaazing client libraries
 client
 # IntelliJ IDEA project files
