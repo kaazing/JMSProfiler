@@ -460,7 +460,7 @@
             .append("text")
             .attr("transform", "rotate(-90)")
             .attr('font-style', 'italic')
-            .attr("y", -50) // was: 6
+            .attr("y", -margin.left) // was: 6
             .attr("x", -height) // was: 6
             .attr("dy", ".71em")
             .style("text-anchor", "start")
