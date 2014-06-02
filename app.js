@@ -30,8 +30,8 @@
             if (settings) {
                 settings = JSON.parse(settings);
                 ['topics', 'timeout', 'samples'].forEach(
-                    function(key) {
-                       form.elements[key].value = settings[key];
+                    function (key) {
+                        form.elements[key].value = settings[key];
                     }
                 )
             }
@@ -46,6 +46,9 @@
         };
     }
 
+    /*
+     * Constructs the WebSocket URL based on the page's URL.
+     */
     function makeURL(service, protocol) {
         protocol = protocol || location.authority
         // detect explicit host:port authority
@@ -81,6 +84,9 @@
         })();
     }
 
+    /*
+     * Handle form submission, including verifying inputs.
+     */
     function submit(form, wsFactory) {
 
         var errors = {count: 0, url: [], topics: [], samples: [], timeout: []};
@@ -148,10 +154,8 @@
     }
 
 
-    /**
+    /*
      * Sets up the connection at url and returns a promise with the connection.
-     *
-     * @param url
      */
     function requestConnection(url, wsFactory) {
         return new Q.Promise(function (resolve, reject) {
@@ -168,6 +172,9 @@
         });
     }
 
+    /*
+     * Loops through the topics and collects statistics for each.
+     */
     function collectAll(wsFactory, connection, topics, sampleLimit, timeLimit) {
         return new Q.Promise(function (resolve, reject, progress) {
             var result = [];
@@ -176,7 +183,8 @@
                     return collectData(wsFactory.wrappedWebSocket, connection, topic, sampleLimit, timeLimit)
                 })
                     .then(function (samples) {
-                        result.push({topic: (topic), samples: (samples)});
+                        var extent = d3.extent(samples);
+                        result.push({topic: (topic), samples: (samples), min: (extent[0]), max: (extent[1]), median: (d3.median(samples))});
                     });
             }, Q.Promise.resolve())
                 .then(function () {
@@ -188,6 +196,9 @@
         });
     }
 
+    /*
+     * Gathers the statistics for a single topic.
+     */
     function collectData(webSocket, connection, topicName, sampleLimit, timeLimit) {
 
         return new Q.Promise(function (resolve, reject, progress) {
@@ -233,9 +244,13 @@
 
                     function wsMessageListener(event) {
                         // event.data is a ByteBuffer
-                        if (wsSamples.length < sampleLimit) {
+
+                        // Gather one extra sample (the first is a setup packet)
+                        if (wsSamples.length <= sampleLimit) {
                             wsSamples.push(event.data.limit);
                         } else {
+                            // Drop the setup packet
+                            wsSamples.splice(0, 1);
                             resolve();
                         }
                     }
@@ -275,22 +290,47 @@
 // ========================================================
 // Charting
 
+    var margin = {top: 20, right: 80, bottom: 30, left: 50},
+        width = 960 - margin.left - margin.right,
+        height = 500 - margin.top - margin.bottom;
 
-    function plotData(data) {
-        var margin = {top: 20, right: 80, bottom: 30, left: 50},
-            width = 960 - margin.left - margin.right,
-            height = 500 - margin.top - margin.bottom;
+    /*
+     * Create or replace the SVG
+     */
+    function makeChart(div) {
+        var oldSVG = div.select("svg");
+        if (oldSVG) oldSVG.remove();
 
-
-        var svg = d3.select("#chart").append("svg")
+        return div.append("svg")
             .attr("width", width + margin.left + margin.right)
             .attr("height", height + margin.top + margin.bottom)
             .append("g")
             .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+    }
+
+    function makeTable(div) {
+        var oldTable = div.select('table');
+        if (oldTable) oldTable.remove();
+
+        var table = div.append("table").attr('class', 'table table-striped');
+        var thead = table.append("thead").append("tr");
+        thead.append("th").text("Topic");
+        thead.append("th").text("Samples");
+        thead.append("th").text("Min");
+        thead.append("th").text("Max");
+        thead.append("th").text("Median");
+        return table.append("tbody");
+    }
+
+
+    function plotData(data) {
+        var div = d3.select('#results');
+        var svg = makeChart(div);
+        var tbody = makeTable(div);
 
         var x = d3.scale.linear()
             .range([0, width])
-            .domain([0, d3.max(data, function (a) {
+            .domain([1, d3.max(data, function (a) {
                 return a.samples.length
             })]);
 
@@ -299,7 +339,7 @@
             .domain([
                 0,
                 d3.max(data, function (a) {
-                    return d3.max(a.samples)
+                    return a.max
                 })
             ]);
 
@@ -318,12 +358,11 @@
 
         var line = d3.svg.line()
             .x(function (d, i) {
-                return x(i);
+                return x(i+1);  // from 0-based to 1-based
             })
             .y(function (d) {
                 return y(d);
-            })
-            .defined(function (d, i) { return i } ); // No line defined at point 0
+            });
 
         svg.append("g")
             .attr("class", "x axis")
@@ -371,6 +410,27 @@
                 return color(d.topic)
             });
 
+        var summary = tbody.selectAll('tr.summary')
+            .data(data)
+            .enter()
+            .append('tr')
+            .attr('class', 'summary');
+
+        summary.append('td').text(function (d) {
+            return d.topic
+        });
+        summary.append('td').text(function (d) {
+            return d.samples.length
+        });
+        summary.append('td').text(function (d) {
+            return d.min
+        });
+        summary.append('td').text(function (d) {
+            return d.max
+        });
+        summary.append('td').text(function (d) {
+            return d.median
+        });
 
     }
 
