@@ -231,9 +231,10 @@
                     return collectData(wsFactory.wrappedWebSocket, connection, topic, sampleLimit, timeLimit)
                 })
                     .then(function (samples) {
-                        samples = samples.filter(function (d) { return d > 20 }); // filter out control packets, ping/pong, etc.
-                        var extent = d3.extent(samples);
-                        result.push({topic: (topic), samples: (samples), min: (extent[0]), max: (extent[1]), median: (d3.median(samples))});
+                        samples = samples.filter(function (sample) { return sample.b > 25 }); // filter out control packets, ping/pong, etc.
+                        var sizes = samples.map(function (d) { return d.b });
+                        var extent = d3.extent(sizes);
+                        result.push({topic: (topic), samples: (samples), min: (extent[0]), max: (extent[1]), median: (d3.median(sizes))});
                         progress.update(topic, 100);
                     });
             }, Q.Promise.resolve())
@@ -293,12 +294,13 @@
             function collectSamples() {
                 return new Q.Promise(function (resolve) {
                     var timeoutID;
+                    var startTime = Date.now();
 
                     function wsMessageListener(event) {
                         // event.data is a ByteBuffer
 
                         if (wsSamples.length < sampleLimit) {
-                            wsSamples.push(event.data.limit);
+                            wsSamples.push({b: (event.data.limit), t: ((Date.now() - startTime) / 1000) });
                         } else {
                             completed();
                         }
@@ -385,10 +387,11 @@
         var svg = makeChart(div);
         var tbody = makeTable(div);
 
-        var x = d3.scale.linear()
+        var t = d3.scale.linear()
             .range([0, width])
-            .domain([1, d3.max(data, function (a) {
-                return a.samples.length
+            .domain([0, d3.max(data, function (a) {
+                var len = a.samples.length;
+                return len == 0 ? 0 : a.samples[len-1].t;
             })]);
 
         var y = d3.scale.linear()
@@ -406,7 +409,7 @@
             }));
 
         var xAxis = d3.svg.axis()
-            .scale(x)
+            .scale(t)
             .orient("bottom");
 
         var yAxis = d3.svg.axis()
@@ -414,11 +417,11 @@
             .orient("left");
 
         var line = d3.svg.line()
-            .x(function (d, i) {
-                return x(i + 1);  // from 0-based to 1-based
+            .x(function (d) {
+                return t(d.t);
             })
             .y(function (d) {
-                return y(d);
+                return y(d.b);
             });
 
         svg.append("g")
@@ -453,10 +456,11 @@
 
         topic.append("text")
             .datum(function (d) {
-                return {topic: d.topic, sample: (d.samples.length), value: d3.median(d.samples) }
+                var last = (d.samples.length == 0) ? 0 : d.samples[d.samples.length -1];
+                return {topic: (d.topic), sample: (last.t), value: (d.median) }
             })
             .attr("transform", function (d) {
-                return "translate(" + x(d.sample) + "," + y(d.value) + ")";
+                return "translate(" + t(d.sample) + "," + y(d.value) + ")";
             })
             .attr("x", 3)
             .attr("dy", ".35em")
