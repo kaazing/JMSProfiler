@@ -233,8 +233,9 @@
                     .then(function (samples) {
                         samples = samples.filter(function (sample) { return sample.b > 25 }); // filter out control packets, ping/pong, etc.
                         var sizes = samples.map(function (d) { return d.b });
+                        var jmsCount = (!samples.length) ? 0 : samples[samples.length-1].j;
                         var extent = d3.extent(sizes);
-                        result.push({topic: (topic), samples: (samples), min: (extent[0]), max: (extent[1]), median: (d3.median(sizes))});
+                        result.push({topic: (topic), samples: (samples), min: (extent[0]), max: (extent[1]), median: (d3.median(sizes)), jmsCount:(jmsCount)});
                         progress.update(topic, 100);
                     });
             }, Q.Promise.resolve())
@@ -254,6 +255,7 @@
     function collectData(webSocket, connection, topicName, sampleLimit, timeLimit) {
 
         return new Q.Promise(function (resolve, reject) {
+            var jmsCount = 0;
 
             console.log('connecting to ' + topicName);
 
@@ -263,6 +265,7 @@
             var consumer = session.createConsumer(topic);
 
             consumer.setMessageListener(function (msg) {
+                ++jmsCount;
             });
 
             var wsSamples = [];
@@ -300,7 +303,7 @@
                         // event.data is a ByteBuffer
 
                         if (wsSamples.length < sampleLimit) {
-                            wsSamples.push({b: (event.data.limit), t: ((Date.now() - startTime) / 1000) });
+                            wsSamples.push({b: (event.data.limit), t: ((Date.now() - startTime) / 1000), j: (jmsCount) });
                         } else {
                             completed();
                         }
@@ -374,7 +377,8 @@
         var table = div.append("table").attr('class', 'table table-striped');
         var thead = table.append("thead").append("tr");
         thead.append("th").text("Topic");
-        thead.append("th").text("Samples");
+        thead.append("th").text("WS Packets");
+        thead.append("th").text("JMS Messages");
         thead.append("th").text("Min");
         thead.append("th").text("Max");
         thead.append("th").text("Median");
@@ -482,6 +486,9 @@
         });
         summary.append('td').text(function (d) {
             return d.samples.length
+        });
+        summary.append('td').text(function (d) {
+            return d.jmsCount
         });
         summary.append('td').text(function (d) {
             return d.min
