@@ -13,7 +13,9 @@
             function (connection) {
                 return collectAll(wsFactory, connection, topics, sampleLimit, timeLimit);
             }
-        ).then(plotData)
+        ).then(function (data) {
+                plotData(data, timeLimit)
+            })
             .catch(function (error) {
                 console.log("Failed!", error.message);
             });
@@ -148,6 +150,7 @@
             if (window.localStorage) {
                 window.localStorage.JMSProfiler = JSON.stringify({topics: (form.elements.topics.value), timeout: (timeout), samples: (samples)});
             }
+            plotData([], timeout * 1000);
             performSampling(wsFactory, url, topics, samples, timeout * 1000);
 
         }
@@ -178,7 +181,7 @@
             return t.substring(7)
         });
         var stats = names.map(function (topic) {
-            return {topic: (topic), percent: 0, status: 0, scale: (1/selectors.length) }
+            return {topic: (topic), percent: 0, status: 0, scale: (1 / selectors.length) }
         });
         var container = d3.select('div.progress').style('display', 'none');
         var bar = container.selectAll('div.progress-bar').data(stats);
@@ -207,7 +210,7 @@
                     redraw();
                 },
 
-                completed: function() {
+                completed: function () {
                     container.style('display', 'none'); // TODO don't do this if there were errors
                 }
             };
@@ -231,12 +234,23 @@
                     return collectData(wsFactory.wrappedWebSocket, connection, topic, sampleLimit, timeLimit)
                 })
                     .then(function (samples) {
-                        samples = samples.filter(function (sample) { return sample.b > 25 }); // filter out control packets, ping/pong, etc.
-                        var sizes = samples.map(function (d) { return d.b });
-                        var jmsCount = (!samples.length) ? 0 : samples[samples.length-1].j;
+                        samples = samples.filter(function (sample) {
+                            return sample.b > 25
+                        }); // filter out control packets, ping/pong, etc.
+                        var sizes = samples.map(function (d) {
+                            return d.b
+                        });
+                        var last = (samples.length) ? samples[samples.length - 1] : null;
+                        var jmsCount = last ? last.j : 0;
+                        var tmax = last ? last.t : 0;
                         var extent = d3.extent(sizes);
-                        result.push({topic: (topic), samples: (samples), min: (extent[0]), max: (extent[1]), median: (d3.median(sizes)), jmsCount:(jmsCount)});
+                        result.push({topic: (topic), samples: (samples), min: (extent[0]), max: (extent[1]), median: (d3.median(sizes)), tmax: (tmax), jmsCount: (jmsCount)});
+                    })
+                    .then(function () {
                         progress.update(topic, 100);
+                    })
+                    .then(function () {
+                        plotData(result, timeLimit)
                     });
             }, Q.Promise.resolve())
                 .then(function () {
@@ -386,26 +400,26 @@
     }
 
 
-    function plotData(data) {
+    function plotData(data, timeLimit) {
         var div = d3.select('#results');
         var svg = makeChart(div);
         var tbody = makeTable(div);
 
+        var hasData = !!data.length;
+        var maxTime = d3.max(data.map(function (d) {
+            return d.tmax
+        })) || (timeLimit / 1000);
+        var maxBytes = d3.max(data.map(function (d) {
+            return d.max
+        })) || 100; // initial byte count
+
         var t = d3.scale.linear()
             .range([0, width])
-            .domain([0, d3.max(data, function (a) {
-                var len = a.samples.length;
-                return len == 0 ? 0 : a.samples[len-1].t;
-            })]);
+            .domain([0, maxTime]);
 
         var y = d3.scale.linear()
             .range([height, 0])
-            .domain([
-                0,
-                d3.max(data, function (a) {
-                    return a.max
-                })
-            ]);
+            .domain([0, maxBytes]);
 
         var color = d3.scale.category10()
             .domain(data.map(function (d) {
@@ -460,7 +474,7 @@
 
         topic.append("text")
             .datum(function (d) {
-                var last = (d.samples.length == 0) ? 0 : d.samples[d.samples.length -1];
+                var last = (d.samples.length == 0) ? 0 : d.samples[d.samples.length - 1];
                 return {topic: (d.topic), sample: (last.t), value: (d.median) }
             })
             .attr("transform", function (d) {
