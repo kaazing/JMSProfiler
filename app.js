@@ -148,7 +148,7 @@
             if (window.localStorage) {
                 window.localStorage.JMSProfiler = JSON.stringify({topics: (form.elements.topics.value), timeout: (timeout), samples: (samples)});
             }
-            performSampling(wsFactory, url, topics, samples, timeout);
+            performSampling(wsFactory, url, topics, samples, timeout * 1000);
 
         }
     }
@@ -252,7 +252,7 @@
      */
     function collectData(webSocket, connection, topicName, sampleLimit, timeLimit) {
 
-        return new Q.Promise(function (resolve, reject, progress) {
+        return new Q.Promise(function (resolve, reject) {
 
             console.log('connecting to ' + topicName);
 
@@ -291,7 +291,8 @@
             }
 
             function collectSamples() {
-                return new Q.Promise(function (resolve, reject, progress) {
+                return new Q.Promise(function (resolve) {
+                    var timeoutID;
 
                     function wsMessageListener(event) {
                         // event.data is a ByteBuffer
@@ -299,11 +300,19 @@
                         if (wsSamples.length < sampleLimit) {
                             wsSamples.push(event.data.limit);
                         } else {
-                            resolve();
+                            completed();
                         }
                     }
 
+                    function completed() {
+                        webSocket.removeEventListener('message', wsMessageListener, false);
+                        if (timeoutID) clearTimeout(timeoutID);
+                        console.log('...completed');
+                        resolve();
+                    }
+
                     console.log('...sampling');
+                    timeoutID = setTimeout(completed, timeLimit);
                     webSocket.addEventListener('message', wsMessageListener, false);
                 });
             }
