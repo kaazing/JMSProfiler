@@ -366,7 +366,7 @@
 // ========================================================
 // Charting
 
-    var margin = {top: 20, right: 80, bottom: 30, left: 50},
+    var margin = {top: 20, right: 80, bottom: 50, left: 50},
         width = 960 - margin.left - margin.right,
         height = 500 - margin.top - margin.bottom;
 
@@ -445,16 +445,25 @@
         svg.append("g")
             .attr("class", "x axis")
             .attr("transform", "translate(0," + height + ")")
-            .call(xAxis);
+            .call(xAxis)
+            .append('text')
+            .attr('font-style', 'italic')
+            .attr('y', 30)
+            .attr('x', 0)
+            .attr("dy", ".71em")
+            .style("text-anchor", "start")
+            .text("Time (s)");
 
         svg.append("g")
             .attr("class", "y axis")
             .call(yAxis)
             .append("text")
             .attr("transform", "rotate(-90)")
-            .attr("y", 6)
+            .attr('font-style', 'italic')
+            .attr("y", -50) // was: 6
+            .attr("x", -height) // was: 6
             .attr("dy", ".71em")
-            .style("text-anchor", "end")
+            .style("text-anchor", "start")
             .text("Payload (bytes)");
 
 
