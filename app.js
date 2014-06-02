@@ -172,22 +172,73 @@
         });
     }
 
+    function initProgress(selectors) {
+        var names = selectors.map(function (t) {
+            // strip '/topic/' prefix
+            return t.substring(7)
+        });
+        var stats = names.map(function (topic) {
+            return {topic: (topic), percent: 0, status: 0, scale: (1/selectors.length) }
+        });
+        var container = d3.select('div.progress').style('display', 'none');
+        var bar = container.selectAll('div.progress-bar').data(stats);
+
+        bar.enter()
+            .append('div')
+            .attr('class', 'progress-bar');
+
+        function redraw() {
+            container.style('display', 'block');
+
+            bar.data(stats);
+
+            bar.style('width', function (d, i) {
+                return Math.round(d.percent * d.scale) + '%'
+            });
+        }
+
+        redraw();
+
+        return (function () {
+            return {
+                update: function (selector, percent) {
+                    var index = selectors.indexOf(selector);
+                    stats[index].percent = percent;
+                    redraw();
+                },
+
+                completed: function() {
+                    container.style('display', 'none'); // TODO don't do this if there were errors
+                }
+            };
+        })();
+
+    }
+
+    // TODO show name of the topic being collected
+    // TODO report collection status by setting the color of the segment
+
     /*
      * Loops through the topics and collects statistics for each.
      */
+
     function collectAll(wsFactory, connection, topics, sampleLimit, timeLimit) {
         return new Q.Promise(function (resolve, reject, progress) {
             var result = [];
+            var progress = initProgress(topics);
             topics.reduce(function (sequence, topic) {
                 return sequence.then(function () {
                     return collectData(wsFactory.wrappedWebSocket, connection, topic, sampleLimit, timeLimit)
                 })
                     .then(function (samples) {
+                        samples = samples.filter(function (d) { return d > 20 }); // filter out control packets, ping/pong, etc.
                         var extent = d3.extent(samples);
                         result.push({topic: (topic), samples: (samples), min: (extent[0]), max: (extent[1]), median: (d3.median(samples))});
+                        progress.update(topic, 100);
                     });
             }, Q.Promise.resolve())
                 .then(function () {
+                    progress.completed();
                     resolve(result)
                 }).catch(function (error) {
                     console.log('returning error');
@@ -213,7 +264,7 @@
             consumer.setMessageListener(function (msg) {
             });
 
-            var wsSamples = [], jmsTimes = [];
+            var wsSamples = [];
 
             /**
              * @returns a promise that resolves when the connection has been started.
@@ -245,12 +296,9 @@
                     function wsMessageListener(event) {
                         // event.data is a ByteBuffer
 
-                        // Gather one extra sample (the first is a setup packet)
-                        if (wsSamples.length <= sampleLimit) {
+                        if (wsSamples.length < sampleLimit) {
                             wsSamples.push(event.data.limit);
                         } else {
-                            // Drop the setup packet
-                            wsSamples.splice(0, 1);
                             resolve();
                         }
                     }
@@ -358,7 +406,7 @@
 
         var line = d3.svg.line()
             .x(function (d, i) {
-                return x(i+1);  // from 0-based to 1-based
+                return x(i + 1);  // from 0-based to 1-based
             })
             .y(function (d) {
                 return y(d);
@@ -404,7 +452,7 @@
             .attr("x", 3)
             .attr("dy", ".35em")
             .text(function (d) {
-                return d.topic;
+                return d.topic.substr(7);
             })
             .style("fill", function (d) {
                 return color(d.topic)
