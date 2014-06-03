@@ -34,7 +34,7 @@
             var settings = window.localStorage.JMSProfiler;
             if (settings) {
                 settings = JSON.parse(settings);
-                ['topics', 'timeout', 'samples'].forEach(
+                ['topics', 'timeout'].forEach(
                     function (key) {
                         form.elements[key].value = settings[key];
                     }
@@ -54,8 +54,7 @@
     /*
      * Constructs the WebSocket URL based on the page's URL.
      */
-    function makeURL(service, protocol) {
-        protocol = protocol || location.authority
+    function makeURL(service) {
         // detect explicit host:port authority
         var authority = location.host;
         if (location.search) {
@@ -94,7 +93,7 @@
      */
     function submit(form, wsFactory) {
 
-        var errors = {count: 0, url: [], topics: [], samples: [], timeout: []};
+        var errors = {count: 0, url: [], topics: [], timeout: []};
 
         function addError(field, error) {
             errors.count++;
@@ -103,19 +102,17 @@
 
         function require(field, value) {
             if (!value || !(value.trim())) addError(field, 'required')
-        };
+        }
 
         d3.select('div.error')
             .style('display', 'none');
 
         var url = form.elements.url.value;
         var topicNames = form.elements.topics.value;
-        var samples = form.elements.samples.value;
         var timeout = form.elements.timeout.value;
 
         require('url', url);
         require('topics', topicNames);
-        require('samples', samples);
         require('timeout', timeout);
 
         // extract the topic names
@@ -130,16 +127,12 @@
         // be nice to the user and show the values we're using
         form.elements.topics.value = topics.join('\n');
 
-        samples = (samples || '').trim();
-        if (!/^(\+)?[0-9]+$/.test(samples)) addError('samples', 'Must be an integer > 0');
-        samples = parseInt(samples);
-
         timeout = (timeout || '').trim();
-        if (!/^(\+)?[0-9.]+$/.test(samples)) addError('timeout', 'Must be an number > 0');
+        if (!/^(\+)?[0-9.]+$/.test(timeout)) addError('timeout', 'Must be an number > 0');
         timeout = parseFloat(timeout);
 
         // Update the form to reflect the error status
-        ['url', 'topics', 'samples'].forEach(function (field) {
+        ['url', 'topics', 'timeout'].forEach(function (field) {
             var group = document.querySelector('.' + field + '-group'); // e.g. .url-group
             var messageField = group.querySelector('.message');
             var message = errors[field].join(', ');
@@ -154,10 +147,10 @@
 
         if (!errors.count) {
             if (window.localStorage) {
-                window.localStorage.JMSProfiler = JSON.stringify({topics: (form.elements.topics.value), timeout: (timeout), samples: (samples)});
+                window.localStorage.JMSProfiler = JSON.stringify({topics: (form.elements.topics.value), timeout: (timeout)});
             }
             plotData([], timeout * 1000);
-            performSampling(wsFactory, url, topics, samples, timeout * 1000);
+            performSampling(wsFactory, url, topics, timeout * 1000);
 
         }
     }
@@ -231,7 +224,7 @@
      * Loops through the topics and collects statistics for each.
      */
 
-    function collectAll(wsFactory, connection, topics, sampleLimit, timeLimit) {
+    function collectAll(wsFactory, connection, topics, timeLimit) {
         return new Q.Promise(function (resolve, reject) {
             var result = [];
             var progress = initProgress(topics);
@@ -255,7 +248,7 @@
                         }, updateInterval);
                     })
                     .then(function () {
-                        return collectData(wsFactory.wrappedWebSocket, connection, topic, sampleLimit, timeLimit)
+                        return collectData(wsFactory.wrappedWebSocket, connection, topic, timeLimit)
                     })
                     .then(function (samples) {
                         samples = samples.filter(function (sample) {
@@ -294,7 +287,7 @@
     /*
      * Gathers the statistics for a single topic.
      */
-    function collectData(webSocket, connection, topicName, sampleLimit, timeLimit) {
+    function collectData(webSocket, connection, topicName, timeLimit) {
 
         return new Q.Promise(function (resolve, reject) {
             var jmsCount = 0;
@@ -343,12 +336,7 @@
 
                     function wsMessageListener(event) {
                         // event.data is a ByteBuffer
-
-                        if (wsSamples.length < sampleLimit) {
-                            wsSamples.push({b: (event.data.limit), t: ((Date.now() - startTime) / 1000), j: (jmsCount) });
-                        } else {
-                            completed();
-                        }
+                        wsSamples.push({b: (event.data.limit), t: ((Date.now() - startTime) / 1000), j: (jmsCount) });
                     }
 
                     function completed() {
