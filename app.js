@@ -17,6 +17,9 @@
                 plotData(data, timeLimit)
             })
             .catch(function (error) {
+                d3.select('div.error')
+                    .style('display', 'block')
+                    .text("ERROR: " + error.message);
                 console.log("Failed!", error.message);
             });
     }
@@ -101,6 +104,9 @@
         function require(field, value) {
             if (!value || !(value.trim())) addError(field, 'required')
         };
+
+        d3.select('div.error')
+            .style('display', 'none');
 
         var url = form.elements.url.value;
         var topicNames = form.elements.topics.value;
@@ -351,13 +357,13 @@
             startConnection()
                 .then(collectSamples)
                 .then(stopConnection)
-                .then(closeSession)
                 .then(function () {
                     resolve(wsSamples);
                 })
                 .catch(function (error) {
                     reject(error);
-                });
+                })
+                .finally(closeSession);
 
         });
     }
