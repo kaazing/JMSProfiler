@@ -192,21 +192,21 @@
         var container = d3.select('div.progress').style('display', 'none');
         var bar = container.selectAll('div.progress-bar').data(stats);
 
-        bar.enter()
-            .append('div')
-            .attr('class', 'progress-bar');
+        function makePercent(d) {
+            return Math.floor(d.percent * d.scale) + '%'
+        }
 
         function redraw() {
             container.style('display', 'block');
-
-            bar.data(stats);
-
-            bar.style('width', function (d, i) {
-                return Math.round(d.percent * d.scale) + '%'
-            });
+            bar.data(stats).style('width', makePercent);
         }
 
-        redraw();
+        bar.enter()
+            .append('div')
+            .attr('class', 'progress-bar')
+            .style('width', makePercent);
+
+        bar.exit().remove();
 
         return (function () {
             return {
@@ -232,13 +232,31 @@
      */
 
     function collectAll(wsFactory, connection, topics, sampleLimit, timeLimit) {
-        return new Q.Promise(function (resolve, reject, progress) {
+        return new Q.Promise(function (resolve, reject) {
             var result = [];
             var progress = initProgress(topics);
             topics.reduce(function (sequence, topic) {
-                return sequence.then(function () {
-                    return collectData(wsFactory.wrappedWebSocket, connection, topic, sampleLimit, timeLimit)
-                })
+
+                var updateInterval = 125; // ms
+                var percentComplete = 0;
+                var intervalRef;
+
+                function incrementProgress(topic, increment) {
+                    increment = increment || 10;
+                    percentComplete += increment;
+                    if (percentComplete > 100) percentComplete = 100;
+                    progress.update(topic, percentComplete);
+                }
+
+                return sequence
+                    .then(function () {
+                        intervalRef = setInterval(function () {
+                            incrementProgress(topic, 100 * (updateInterval / timeLimit))
+                        }, updateInterval);
+                    })
+                    .then(function () {
+                        return collectData(wsFactory.wrappedWebSocket, connection, topic, sampleLimit, timeLimit)
+                    })
                     .then(function (samples) {
                         samples = samples.filter(function (sample) {
                             return sample.b > 25
@@ -248,11 +266,15 @@
                         });
                         var last = (samples.length) ? samples[samples.length - 1] : null;
                         var jmsCount = last ? last.j : 0;
+                        var rate = Math.round(1000 * samples.length / timeLimit);
                         var tmax = last ? last.t : 0;
                         var extent = d3.extent(sizes);
-                        result.push({topic: (topic), samples: (samples), min: (extent[0]), max: (extent[1]), median: (d3.median(sizes)), tmax: (tmax), jmsCount: (jmsCount)});
+                        var sum = d3.sum(sizes);
+                        var bandwidth = Math.round(100 * sum / timeLimit) / 100;
+                        result.push({topic: (topic), samples: (samples), min: (extent[0]), max: (extent[1]), rate: (rate), median: (d3.median(sizes)), sum: (sum), bandwidth: (bandwidth), tmax: (tmax), jmsCount: (jmsCount)});
                     })
                     .then(function () {
+                        clearInterval(intervalRef);
                         progress.update(topic, 100);
                     })
                     .then(function () {
@@ -397,11 +419,12 @@
         var table = div.append("table").attr('class', 'table table-striped');
         var thead = table.append("thead").append("tr");
         thead.append("th").text("Topic");
-        thead.append("th").text("WS Packets");
-        thead.append("th").text("JMS Messages");
-        thead.append("th").text("Min");
-        thead.append("th").text("Max");
-        thead.append("th").text("Median");
+        thead.append("th").text("Packets");
+        thead.append("th").text("Avg. Rate");
+        thead.append("th").text("Min Size (B)");
+        thead.append("th").text("Max Size (B)");
+        thead.append("th").text("Median Size (B)");
+        thead.append("th").text("Bandwidth");
         return table.append("tbody");
     }
 
@@ -421,11 +444,11 @@
 
         var t = d3.scale.linear()
             .range([0, width])
-            .domain([0, maxTime]);
+            .domain([0, Math.ceil(maxTime)]);
 
         var y = d3.scale.linear()
             .range([height, 0])
-            .domain([0, maxBytes]);
+            .domain([60, maxBytes]);
 
         var color = d3.scale.category10()
             .domain(data.map(function (d) {
@@ -517,7 +540,7 @@
             return d.samples.length
         });
         summary.append('td').text(function (d) {
-            return d.jmsCount
+            return d.rate + " msg/s"
         });
         summary.append('td').text(function (d) {
             return d.min
@@ -527,6 +550,9 @@
         });
         summary.append('td').text(function (d) {
             return d.median
+        });
+        summary.append('td').text(function (d) {
+            return d.bandwidth + " KB/s";
         });
 
     }
