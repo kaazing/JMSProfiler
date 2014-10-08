@@ -278,7 +278,6 @@
                     progress.completed();
                     resolve(result)
                 }).catch(function (error) {
-                    console.log('returning error');
                     reject(error);
                 });
         });
@@ -291,8 +290,6 @@
 
         return new Q.Promise(function (resolve, reject) {
             var jmsCount = 0;
-
-            console.log('connecting to ' + topicName);
 
             var session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
             // TODO handle errors when creating topic listeners
@@ -314,7 +311,6 @@
                         resolve();
                     }
 
-                    console.log('...waiting on connection start');
                     connection.start(connectionStarted);
                 });
             }
@@ -342,11 +338,9 @@
                     function completed() {
                         webSocket.removeEventListener('message', wsMessageListener, false);
                         if (timeoutID) clearTimeout(timeoutID);
-                        console.log('...completed');
                         resolve();
                     }
 
-                    console.log('...sampling');
                     timeoutID = setTimeout(completed, timeLimit);
                     webSocket.addEventListener('message', wsMessageListener, false);
                 });
@@ -359,7 +353,6 @@
                         resolve();
                     }
 
-                    console.log('...closing session');
                     session.close(sessionClosed);
                 });
             }
