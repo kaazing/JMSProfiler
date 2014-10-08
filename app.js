@@ -1,12 +1,41 @@
 (function profiler() {
     "use strict";
 
+    Tracer.setTrace(false);
+
     var wsf = new WebSocketFactory();
     // Will save the web socket so we can attach event listeners to it later
     interceptSocketCreation(wsf, function (ws) {
         wsf.wrappedWebSocket = ws;
     });
+    setupSSO(wsf);
     installForm(wsf);
+
+    
+    function setupSSO(webSocketFactory) {
+        /* Respond to authentication challenges with popup login dialog */
+        var basicHandler = new BasicChallengeHandler();
+        basicHandler.loginHandler = function(callback) {
+            var credentials;
+            var dialog = $('#login');
+            dialog.modal({backdrop:'static'});
+        
+            $('#login_ok').on('click', function(e) {
+                credentials = new PasswordAuthentication($('#username').val(), $('#password').val());
+                dialog.modal('hide'); // triggers a hide event that will present the credentials
+            });
+        
+            $('#login_cancel').on('click', function(e) {
+                credentials = null;
+                dialog.modal('hide'); // triggers a hide event that will present the credentials (null == reject)
+            });
+        
+            dialog.on('hidden.bs.modal', function(e) {
+                callback(credentials);
+            });
+        };
+        webSocketFactory.setChallengeHandler(basicHandler);
+    }
 
     function performSampling(wsFactory, url, topics, sampleLimit, timeLimit) {
         requestConnection(url, wsFactory).then(
@@ -23,7 +52,6 @@
                 console.log("Failed!", error.message);
             });
     }
-
 
     /**
      * Call on load to wire up the form
@@ -267,12 +295,14 @@
                         result.push({topic: (topic), samples: (samples), min: (extent[0]), max: (extent[1]), rate: (rate), median: (d3.median(sizes)), sum: (sum), bandwidth: (bandwidth), tmax: (tmax), jmsCount: (jmsCount)});
                     })
                     .then(function () {
+                        plotData(result, timeLimit)
+                    }).fail(function(error) {
+                        throw(error); // breaks out of the resolve loop, the catch below will get called 
+                    }).finally(function () {
                         clearInterval(intervalRef);
                         progress.update(topic, 100);
                     })
-                    .then(function () {
-                        plotData(result, timeLimit)
-                    });
+;
             }, Q.Promise.resolve())
                 .then(function () {
                     progress.completed();
@@ -363,7 +393,7 @@
                 .then(function () {
                     resolve(wsSamples);
                 })
-                .catch(function (error) {
+                .fail(function (error) {
                     reject(error);
                 })
                 .finally(closeSession);
