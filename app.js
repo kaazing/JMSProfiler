@@ -73,7 +73,7 @@
         form.onsubmit = function (e) {
             e.preventDefault()
         };
-        form.elements.url.value = makeURL('jms');
+        if (!form.elements.url.value) form.elements.url.value = makeURL('jms');
         form.elements.start.onclick = function () {
             submit(form, wsFactory);
         };
