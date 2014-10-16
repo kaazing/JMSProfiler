@@ -147,10 +147,6 @@
         var topics = (topicNames || '').split(/\s+/)
             .filter(function (name) {
                 return name.trim()
-            })
-            .map(function (name) {
-                name = name.trim();
-                return (name.indexOf('/topic/') >= 0) ? name : ('/topic/' + name);
             });
         // be nice to the user and show the values we're using
         form.elements.topics.value = topics.join('\n');
