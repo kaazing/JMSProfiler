@@ -280,7 +280,7 @@
                     })
                     .then(function (samples) {
                         samples = samples.filter(function (sample) {
-                            return sample.b > 25
+                            return sample.b > 20
                         }); // filter out control packets, ping/pong, etc.
                         var sizes = samples.map(function (d) {
                             return d.b
@@ -459,7 +459,7 @@
 
         var y = d3.scale.linear()
             .range([height, 0])
-            .domain([60, maxBytes]);
+            .domain([0, maxBytes]);
 
         var color = d3.scale.category10()
             .domain(data.map(function (d) {
