@@ -455,7 +455,7 @@
 
         var y = d3.scale.linear()
             .range([height, 0])
-            .domain([0, maxBytes]);
+            .domain([0, 10 * Math.ceil(maxBytes / 10)]);
 
         var color = d3.scale.category10()
             .domain(data.map(function (d) {
