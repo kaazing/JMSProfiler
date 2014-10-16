@@ -408,7 +408,8 @@
     /*
      * Create or replace the SVG
      */
-    function makeChart(div) {
+    function makeChart() {
+        var div = d3.select('#graph');
         var oldSVG = div.select("svg");
         if (oldSVG) oldSVG.remove();
 
@@ -419,7 +420,8 @@
             .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
     }
 
-    function makeTable(div) {
+    function makeTable() {
+        var div = d3.select('#summary');
         var oldTable = div.select('table');
         if (oldTable) oldTable.remove();
 
@@ -438,8 +440,8 @@
 
     function plotData(data, timeLimit) {
         var div = d3.select('#results');
-        var svg = makeChart(div);
-        var tbody = makeTable(div);
+        var svg = makeChart();
+        var tbody = makeTable();
 
         var hasData = !!data.length;
         var maxTime = d3.max(data.map(function (d) {
@@ -455,7 +457,7 @@
 
         var y = d3.scale.linear()
             .range([height, 0])
-            .domain([0, maxBytes]);
+            .domain([0, 10 * Math.ceil(maxBytes / 10)]);
 
         var color = d3.scale.category10()
             .domain(data.map(function (d) {
